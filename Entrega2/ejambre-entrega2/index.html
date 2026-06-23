@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Enjambre — Entrega 2 | T1+T2+T4+T5</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111111; color: #e0e0e0; font-family: 'Courier New', monospace; overflow: hidden; }
+    canvas { display: block; }
+
+    /* ── HUD métricas ─────────────────────────────────── */
+    #hud {
+      position: fixed; top: 16px; left: 16px; z-index: 10;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .stat-box {
+      background: rgba(0,0,0,0.72);
+      border: 1px solid #2a2a5a;
+      border-radius: 6px;
+      padding: 10px 16px;
+      min-width: 185px;
+    }
+    .stat-label { font-size: 10px; color: #7070b0; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 22px; font-weight: bold; color: #00e5ff; margin-top: 2px; }
+    .stat-value.ok   { color: #69ff47; }
+    .stat-value.warn { color: #ff6b35; }
+    .stat-sub { font-size: 10px; color: #505080; margin-top: 2px; }
+
+    /* ── Panel de controles ──────────────────────────── */
+    #controls {
+      position: fixed; top: 16px; right: 16px; z-index: 10;
+      background: rgba(0,0,0,0.78);
+      border: 1px solid #2a2a5a;
+      border-radius: 8px;
+      padding: 16px;
+      width: 230px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    #controls h2 { font-size: 11px; color: #34d399; text-transform: uppercase; letter-spacing: 1px; }
+    .ctrl-row { display: flex; flex-direction: column; gap: 4px; }
+    .ctrl-row label { font-size: 11px; color: #aaa; display: flex; justify-content: space-between; }
+    .ctrl-row label span { color: #34d399; }
+    input[type=range] { width: 100%; accent-color: #34d399; }
+    .ctrl-row.row-h { flex-direction: row; align-items: center; gap: 8px; font-size: 11px; color: #aaa; }
+    .ctrl-row.row-h input[type=checkbox] { accent-color: #34d399; width: 14px; height: 14px; }
+    .ctrl-row select {
+      background: #1a1a2e; border: 1px solid #3a3a6a; color: #ccc;
+      border-radius: 4px; padding: 4px 6px; font-size: 11px; width: 100%;
+    }
+
+    /* ── Info footer ─────────────────────────────────── */
+    #info {
+      position: fixed; bottom: 14px; left: 16px;
+      font-size: 10px; color: #404060; line-height: 1.8;
+    }
+
+    /* ── VAT preview ─────────────────────────────────── */
+    #vat-preview {
+      position: fixed; bottom: 14px; right: 16px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid #2a2a5a; border-radius: 6px; padding: 8px;
+    }
+    #vat-preview canvas { border-radius: 4px; display: block; }
+    #vat-preview p { font-size: 10px; color: #505070; text-align: center; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="stat-box">
+      <div class="stat-label">FPS</div>
+      <div class="stat-value" id="fps-display">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Agentes</div>
+      <div class="stat-value ok" id="count-display">100</div>
+      <div class="stat-sub">InstancedMesh + VAT (T5)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Draw Calls</div>
+      <div class="stat-value" id="dc-display">--</div>
+      <div class="stat-sub">1 draw call = todos</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Triángulos</div>
+      <div class="stat-value" id="tri-display">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Shader activo</div>
+      <div class="stat-value" style="font-size:13px; color:#34d399" id="shader-display">TOON</div>
+    </div>
+  </div>
+
+  <!-- Controles -->
+  <div id="controls">
+    <h2>Controles del Enjambre</h2>
+
+    <div class="ctrl-row">
+      <label>Agentes <span id="countVal">100</span></label>
+      <input type="range" id="agentCount" min="50" max="500" step="50" value="100">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Shader activo <span></span></label>
+      <select id="shaderMode">
+        <option value="toon" selected>Toon / Cel-shading (T4)</option>
+        <option value="wobble">Vertex Wobble (T4)</option>
+        <option value="normals">Normales debug</option>
+      </select>
+    </div>
+
+    <div class="ctrl-row">
+      <label>Bandas Toon <span id="bandsVal">4</span></label>
+      <input type="range" id="bands" min="2" max="8" step="1" value="4">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Grosor contorno <span id="outlineVal">0.025</span></label>
+      <input type="range" id="outlineThick" min="0.0" max="0.08" step="0.005" value="0.025">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Amplitud wobble <span id="ampVal">0.15</span></label>
+      <input type="range" id="wobbleAmp" min="0" max="0.6" step="0.01" value="0.15">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Velocidad enjambre <span id="speedVal">1.0</span></label>
+      <input type="range" id="swarmSpeed" min="0.1" max="3.0" step="0.1" value="1.0">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Alineación (lerp) <span id="lerpVal">0.02</span></label>
+      <input type="range" id="lerpFactor" min="0.001" max="0.1" step="0.001" value="0.02">
+    </div>
+
+    <div class="ctrl-row row-h">
+      <input type="checkbox" id="outlineToggle" checked>
+      <label for="outlineToggle">Contorno oscuro</label>
+    </div>
+
+    <div class="ctrl-row row-h">
+      <input type="checkbox" id="orbitCam" checked>
+      <label for="orbitCam">Cámara orbital</label>
+    </div>
+  </div>
+
+  <!-- Footer info -->
+  <div id="info">
+    Entrega 2 · T1 + T2 + T4 + T5<br>
+    Lógica original T1/T2: IcosahedronGeometry · velocity · lerp · wrap<br>
+    T5: InstancedMesh + VAT DataTexture Float32 (animación GPU)<br>
+    T4: Toon/Cel-shading + Vertex Wobble + Outline back-face inflate
+  </div>
+
+  <!-- VAT texture preview -->
+  <div id="vat-preview">
+    <canvas id="vat-canvas" width="96" height="96"></canvas>
+    <p>VAT texture (T5)</p>
+  </div>
+
+  <!-- Three.js r128 (misma versión que T5) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+  (() => {
+    'use strict';
+
+    /* ════════════════════════════════════════════════════════════════════
+       PARÁMETROS GLOBALES
+    ════════════════════════════════════════════════════════════════════ */
+    let COUNT      = 100;
+    const BOUNDS   = 10;          // igual que T1/T2 original
+
+    const VAT_FRAMES = 64;
+    const FPS_BAKE   = 24;
+
+    let lerpFactor  = 0.02;       // igual que T1/T2 original (velocity.lerp 0.02)
+    let speedMult   = 1.0;
+    let wobbleAmp   = 0.15;
+    let shaderModeN = 0;          // 0=toon 1=wobble 2=normals
+
+    /* ════════════════════════════════════════════════════════════════════
+       ESCENA / RENDERER / CÁMARA
+       (fiel al setup original de T1/T2: background #111111, z=15)
+    ════════════════════════════════════════════════════════════════════ */
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);   // ← igual que T1/T2
+    scene.fog = new THREE.FogExp2(0x111111, 0.010);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 4, 22);   // ligeramente elevada para ver el enjambre 3D
+    camera.lookAt(0, 0, 0);
+
+    /* ════════════════════════════════════════════════════════════════════
+       LUCES
+       T1/T2 tenía PointLight(0xffffff,1) en (10,10,10) — se mantiene.
+       Se agrega luz ambiente suave para el toon shader.
+    ════════════════════════════════════════════════════════════════════ */
+    const pointLight = new THREE.PointLight(0xffffff, 1);
+    pointLight.position.set(10, 10, 10);   // ← posición original T1/T2
+    scene.add(pointLight);
+    scene.add(new THREE.AmbientLight(0x223344, 0.6));
+
+    // Bola visual de la luz (para referencia)
+    const lightBall = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffff88 })
+    );
+    lightBall.position.copy(pointLight.position);
+    scene.add(lightBall);
+
+    /* ════════════════════════════════════════════════════════════════════
+       GEOMETRÍA DEL AGENTE
+       T1/T2 usaba IcosahedronGeometry(0.5) — se mantiene exactamente.
+       (No se convierte a cápsula; la forma del agente original se preserva)
+    ════════════════════════════════════════════════════════════════════ */
+    // IcosahedronGeometry no es indexed-friendly para VAT gl_VertexID,
+    // así que la convertimos a non-indexed (preserva la forma).
+    const icoRaw   = new THREE.IcosahedronGeometry(0.5, 1); // ← igual que T1/T2
+    const agentGeo = icoRaw.toNonIndexed();
+    agentGeo.computeVertexNormals();
+    const VERT_COUNT = agentGeo.attributes.position.count;
+
+    /* ════════════════════════════════════════════════════════════════════
+       VAT — Vertex Animation Texture (T5)
+       Hornea una animación de "pulso" sobre el icosaedro (apropiada
+       para la geometría original T1/T2) en DataTexture RGBA Float32.
+    ════════════════════════════════════════════════════════════════════ */
+    const vatData = new Float32Array(VERT_COUNT * VAT_FRAMES * 4);
+    const posAttr = agentGeo.attributes.position;
+    const nrmAttr = agentGeo.attributes.normal;
+
+    for (let f = 0; f < VAT_FRAMES; f++) {
+      const t = (f / VAT_FRAMES) * Math.PI * 2;
+      for (let v = 0; v < VERT_COUNT; v++) {
+        // Pulsación radial (se ve bien en un icosaedro)
+        const r      = Math.sqrt(posAttr.getX(v)**2 + posAttr.getY(v)**2 + posAttr.getZ(v)**2);
+        const pulse  = 0.08 * Math.sin(t + r * 6.0);
+        const nx     = nrmAttr.getX(v);
+        const ny     = nrmAttr.getY(v);
+        const nz     = nrmAttr.getZ(v);
+        const squash = 0.5 + 0.5 * Math.sin(t * 2 + Math.PI * 0.5);
+        const idx = (f * VERT_COUNT + v) * 4;
+        vatData[idx]     = nx * pulse;
+        vatData[idx + 1] = ny * pulse;
+        vatData[idx + 2] = nz * pulse;
+        vatData[idx + 3] = squash;
+      }
+    }
+
+    const vatTex = new THREE.DataTexture(
+      vatData, VERT_COUNT, VAT_FRAMES,
+      THREE.RGBAFormat, THREE.FloatType
+    );
+    vatTex.magFilter = THREE.LinearFilter;
+    vatTex.minFilter = THREE.LinearFilter;
+    vatTex.wrapS = THREE.RepeatWrapping;
+    vatTex.wrapT = THREE.RepeatWrapping;
+    vatTex.needsUpdate = true;
+
+    // Preview VAT
+    (function drawVATPreview() {
+      const c   = document.getElementById('vat-canvas');
+      const ctx = c.getContext('2d');
+      const id  = ctx.createImageData(96, 96);
+      for (let py = 0; py < 96; py++) {
+        for (let px = 0; px < 96; px++) {
+          const srcX = Math.floor(px * VERT_COUNT / 96);
+          const srcY = Math.floor(py * VAT_FRAMES  / 96);
+          const src  = (srcY * VERT_COUNT + srcX) * 4;
+          const dst  = (py * 96 + px) * 4;
+          id.data[dst]   = Math.min(255,Math.max(0,(vatData[src]   +0.2)/0.4*255));
+          id.data[dst+1] = Math.min(255,Math.max(0,(vatData[src+1] +0.2)/0.4*255));
+          id.data[dst+2] = Math.min(255,Math.max(0,(vatData[src+2] +0.2)/0.4*255));
+          id.data[dst+3] = 255;
+        }
+      }
+      ctx.putImageData(id, 0, 0);
+    })();
+
+    /* ════════════════════════════════════════════════════════════════════
+       SHADERS (T4 integrado en pipeline VAT)
+
+       Vertex shader:
+         1. Lee la VAT con gl_VertexID + aTimeOffset → anima vértices GPU
+         2. Aplica Vertex Wobble senoidal si uMode==1 (T4)
+         3. Aplica instanceMatrix para InstancedMesh (T5)
+
+       Fragment shader:
+         • Modo 0: Toon/Cel-shading (T4) — bandas cuantizadas + specular step
+         • Modo 1: Vertex Wobble color degradado (T4)
+         • Modo 2: Normal debug
+    ════════════════════════════════════════════════════════════════════ */
+    const vertexShader = `
+      /* T5 — VAT */
+      attribute float aTimeOffset;
+      uniform sampler2D uVAT;
+      uniform float uTime;
+      uniform float uVATFrames;
+      uniform float uVertCount;
+      uniform float uFPS;
+
+      /* T4 — Toon / Wobble */
+      uniform vec3  uLightPos;
+      uniform float uWobbleAmp;
+      uniform float uWobbleFreq;
+      uniform float uWobbleSpeed;
+      uniform int   uMode;   /* 0=toon 1=wobble 2=normals */
+
+      varying vec3  vNormal;
+      varying vec3  vWorldPos;
+      varying float vWave;
+
+      void main() {
+        vec3 pos = position;
+
+        /* ── VAT (T5): samplear animación horneada ─────────────────── */
+        float u = (float(gl_VertexID) + 0.5) / uVertCount;
+        float v = fract(uTime * uFPS / uVATFrames + aTimeOffset);
+        vec4 vatSample = texture2D(uVAT, vec2(u, v));
+        pos += vatSample.xyz;
+
+        /* ── Vertex Wobble (T4): deformación senoidal adicional ────── */
+        float wave = 0.0;
+        if (uMode == 1) {
+          wave = uWobbleAmp * sin(uWobbleFreq * pos.y - uTime * uWobbleSpeed);
+          pos.x += wave;
+          pos.z += wave * 0.5;
+        }
+        vWave = wave / max(uWobbleAmp, 0.001) * 0.5 + 0.5;
+
+        /* ── Transformar con instanceMatrix (T5) ───────────────────── */
+        vec4 worldPos = instanceMatrix * vec4(pos, 1.0);
+        vWorldPos = worldPos.xyz;
+        vNormal   = normalize(mat3(instanceMatrix) * normal);
+
+        gl_Position = projectionMatrix * modelViewMatrix * worldPos;
+      }
+    `;
+
+    const fragmentShader = `
+      uniform vec3  uLightPos;
+      uniform vec3  uCamPos;
+      uniform vec3  uBase;
+      uniform vec3  uShadow;
+      uniform float uBands;
+      uniform float uSpec;
+      uniform float uSpecSize;
+      uniform int   uMode;
+
+      varying vec3  vNormal;
+      varying vec3  vWorldPos;
+      varying float vWave;
+
+      void main() {
+        vec3  N    = normalize(vNormal);
+        vec3  L    = normalize(uLightPos - vWorldPos);
+        vec3  V    = normalize(uCamPos   - vWorldPos);
+        vec3  H    = normalize(L + V);
+        float diff = max(dot(N, L), 0.0);
+
+        if (uMode == 0) {
+          /* ── Toon / Cel-shading (T4) ─── */
+          float band    = floor(diff * uBands) / uBands;
+          float specRaw = step(uSpecSize, pow(max(dot(N, H), 0.0), 32.0)) * uSpec;
+          gl_FragColor  = vec4(mix(uShadow, uBase, band) + specRaw * 0.6, 1.0);
+
+        } else if (uMode == 1) {
+          /* ── Vertex Wobble color (T4) ── */
+          vec3 colA = vec3(0.15, 0.35, 0.85);
+          vec3 colB = vec3(0.95, 0.30, 0.60);
+          vec3 base = mix(colA, colB, vWave);
+          float spec = pow(max(dot(N, H), 0.0), 48.0);
+          gl_FragColor = vec4(0.1*base + diff*base + spec*0.8, 1.0);
+
+        } else {
+          /* ── Normales debug ─────────── */
+          gl_FragColor = vec4(N * 0.5 + 0.5, 1.0);
+        }
+      }
+    `;
+
+    // Contorno (T4 — back-face inflate sobre InstancedMesh)
+    const outlineVert = `
+      uniform float uThick;
+      void main() {
+        vec3 inflated   = position + normal * uThick;
+        gl_Position     = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(inflated, 1.0);
+      }
+    `;
+    const outlineFrag = `void main(){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); }`;
+
+    /* ════════════════════════════════════════════════════════════════════
+       UNIFORMS
+    ════════════════════════════════════════════════════════════════════ */
+    function float(n) { return parseFloat(n); }
+
+    const uniforms = {
+      uVAT      : { value: vatTex },
+      uTime     : { value: 0 },
+      uVATFrames: { value: float(VAT_FRAMES) },
+      uVertCount: { value: float(VERT_COUNT) },
+      uFPS      : { value: float(FPS_BAKE) },
+      uLightPos : { value: new THREE.Vector3(10, 10, 10) },  // ← igual que T1/T2
+      uCamPos   : { value: camera.position.clone() },
+      uBase     : { value: new THREE.Vector3(0.13, 0.67, 1.0) },
+      uShadow   : { value: new THREE.Vector3(0.04, 0.11, 0.34) },
+      uBands    : { value: 4.0 },
+      uSpec     : { value: 1.0 },
+      uSpecSize : { value: 0.5 },
+      uMode     : { value: 0 },
+      uWobbleAmp  : { value: 0.15 },
+      uWobbleFreq : { value: 5.0 },
+      uWobbleSpeed: { value: 2.0 },
+    };
+
+    const outlineUniforms = {
+      uThick: { value: 0.025 },
+    };
+
+    const agentMat = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader,
+      fragmentShader,
+      side: THREE.FrontSide,
+    });
+
+    const outlineMat = new THREE.ShaderMaterial({
+      uniforms: outlineUniforms,
+      vertexShader: outlineVert,
+      fragmentShader: outlineFrag,
+      side: THREE.BackSide,
+    });
+
+    /* ════════════════════════════════════════════════════════════════════
+       LÓGICA DE AGENTE — FIEL A T1/T2
+       ─ Posición aleatoria en espacio (random -10..+10 × -5..+5 × -10..+10)
+       ─ Velocidad aleatoria Vector3 (random -0.05..+0.05 por eje)
+       ─ update(): position += velocity, rotación x/y += 0.01, wrap ±BOUNDS
+       ─ getAverageVelocity() + velocity.lerp(avg, lerpFactor) cada frame
+    ════════════════════════════════════════════════════════════════════ */
+    let agentStates = [];   // datos CPU por agente
+
+    function createAgentStates(count) {
+      const states = [];
+      for (let i = 0; i < count; i++) {
+        states.push({
+          // Posición (igual rango que T1/T2: ±20 en x/z, ±10 en y)
+          px: (Math.random() - 0.5) * 20,
+          py: (Math.random() - 0.5) * 10,
+          pz: (Math.random() - 0.5) * 20,
+          // Velocidad (igual que T1/T2: ±0.1 * 0.5 → ±0.05)
+          vx: (Math.random() - 0.5) * 0.1,
+          vy: (Math.random() - 0.5) * 0.1,
+          vz: (Math.random() - 0.5) * 0.1,
+          // Rotación acumulada (T1/T2: += 0.01 por frame)
+          rx: Math.random() * Math.PI * 2,
+          ry: Math.random() * Math.PI * 2,
+          // Color HSL (T1/T2: color.setHSL(random,1,0.5))
+          hue: Math.random(),
+          // VAT time offset por instancia (T5)
+          timeOffset: Math.random(),
+        });
+      }
+      return states;
+    }
+
+    // getAverageVelocity — lógica exacta de T1/T2
+    function getAverageVelocity(states) {
+      let ax = 0, ay = 0, az = 0;
+      for (let i = 0; i < states.length; i++) {
+        ax += states[i].vx;
+        ay += states[i].vy;
+        az += states[i].vz;
+      }
+      const n = states.length;
+      return { x: ax / n, y: ay / n, z: az / n };
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       INSTANCED MESH — construir / reconstruir al cambiar COUNT
+    ════════════════════════════════════════════════════════════════════ */
+    let mesh, outlineMesh;
+
+    function buildSwarm(count) {
+      if (mesh)        scene.remove(mesh);
+      if (outlineMesh) scene.remove(outlineMesh);
+
+      // Clonar geometría y añadir aTimeOffset por instancia (T5)
+      const geo = agentGeo.clone();
+      const timeOffsets = new Float32Array(count);
+      agentStates = createAgentStates(count);
+      for (let i = 0; i < count; i++) timeOffsets[i] = agentStates[i].timeOffset;
+      geo.setAttribute('aTimeOffset', new THREE.InstancedBufferAttribute(timeOffsets, 1));
+
+      // Mesh principal
+      mesh = new THREE.InstancedMesh(geo, agentMat, count);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+      // Colores por instancia (igual que T1/T2: setHSL(random,1,0.5))
+      for (let i = 0; i < count; i++) {
+        mesh.setColorAt(i, new THREE.Color().setHSL(agentStates[i].hue, 1, 0.5));
+      }
+      mesh.instanceColor.needsUpdate = true;
+      scene.add(mesh);
+
+      // Outline (T4 — segundo InstancedMesh con BackSide)
+      outlineMesh = new THREE.InstancedMesh(geo, outlineMat, count);
+      outlineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(outlineMesh);
+    }
+
+    buildSwarm(COUNT);
+
+    /* ════════════════════════════════════════════════════════════════════
+       DUMMY para setMatrixAt
+    ════════════════════════════════════════════════════════════════════ */
+    const dummy = new THREE.Object3D();
+
+    /* ════════════════════════════════════════════════════════════════════
+       FPS
+    ════════════════════════════════════════════════════════════════════ */
+    const fpsEl = document.getElementById('fps-display');
+    const dcEl  = document.getElementById('dc-display');
+    const triEl = document.getElementById('tri-display');
+    let lastFPSTime = performance.now(), frameCount = 0;
+    let camAngle = 0, orbitCam = true;
+
+    /* ════════════════════════════════════════════════════════════════════
+       ANIMATE — lógica T1/T2 preservada, aplicada sobre InstancedMesh
+    ════════════════════════════════════════════════════════════════════ */
+    function animate() {
+      requestAnimationFrame(animate);
+      const now = performance.now();
+      const t   = now * 0.001;
+      frameCount++;
+
+      // Actualizar uniforms de tiempo y cámara
+      uniforms.uTime.value = t;
+      uniforms.uCamPos.value.copy(camera.position);
+
+      // Actualizar posición de la luz (coincide con PointLight original)
+      uniforms.uLightPos.value.copy(pointLight.position);
+      lightBall.position.copy(pointLight.position);
+
+      // ── FPS display (cada 500 ms) ────────────────────────────
+      if (now - lastFPSTime >= 500) {
+        const fps = Math.round(frameCount * 1000 / (now - lastFPSTime));
+        frameCount = 0;
+        lastFPSTime = now;
+        fpsEl.textContent = fps;
+        fpsEl.className   = 'stat-value ' + (fps >= 30 ? 'ok' : 'warn');
+        dcEl.textContent  = renderer.info.render.calls;
+        triEl.textContent = (renderer.info.render.triangles / 1000).toFixed(1) + 'k';
+        renderer.info.reset();
+      }
+
+      // ── Lógica enjambre T1/T2 ───────────────────────────────
+      // 1. Calcular velocidad media (getAverageVelocity de T1/T2)
+      const avg = getAverageVelocity(agentStates);
+
+      for (let i = 0; i < agentStates.length; i++) {
+        const a = agentStates[i];
+
+        // 2. Alineación: velocity.lerp(avgVelocity, lerpFactor) — igual T1/T2
+        const lr = lerpFactor;
+        a.vx += (avg.x - a.vx) * lr;
+        a.vy += (avg.y - a.vy) * lr;
+        a.vz += (avg.z - a.vz) * lr;
+
+        // 3. Movimiento: position += velocity * speedMult — igual T1/T2
+        a.px += a.vx * speedMult;
+        a.py += a.vy * speedMult;
+        a.pz += a.vz * speedMult;
+
+        // 4. Rotación: += 0.01 por frame — igual T1/T2
+        a.rx += 0.01;
+        a.ry += 0.01;
+
+        // 5. Wrap (teletransporte al borde opuesto) — igual T1/T2
+        if (a.px >  BOUNDS) a.px = -BOUNDS;
+        if (a.px < -BOUNDS) a.px =  BOUNDS;
+        if (a.py >  BOUNDS) a.py = -BOUNDS;
+        if (a.py < -BOUNDS) a.py =  BOUNDS;
+        if (a.pz >  BOUNDS) a.pz = -BOUNDS;
+        if (a.pz < -BOUNDS) a.pz =  BOUNDS;
+
+        // 6. Aplicar transform a la instancia
+        dummy.position.set(a.px, a.py, a.pz);
+        dummy.rotation.set(a.rx, a.ry, 0);
+        dummy.scale.setScalar(1.0);
+        dummy.updateMatrix();
+
+        mesh.setMatrixAt(i, dummy.matrix);
+        outlineMesh.setMatrixAt(i, dummy.matrix);
+      }
+
+      mesh.instanceMatrix.needsUpdate = true;
+      outlineMesh.instanceMatrix.needsUpdate = true;
+
+      // ── Cámara orbital ───────────────────────────────────────
+      if (orbitCam) {
+        camAngle += 0.0010;
+        camera.position.x = Math.cos(camAngle) * 22;
+        camera.position.z = Math.sin(camAngle) * 22;
+        camera.position.y = 6;
+        camera.lookAt(0, 0, 0);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    /* ════════════════════════════════════════════════════════════════════
+       UI — CONTROLES
+    ════════════════════════════════════════════════════════════════════ */
+    document.getElementById('agentCount').oninput = e => {
+      COUNT = parseInt(e.target.value);
+      document.getElementById('countVal').textContent = COUNT;
+      document.getElementById('count-display').textContent = COUNT;
+      buildSwarm(COUNT);
+    };
+
+    document.getElementById('shaderMode').onchange = e => {
+      const map = { toon: 0, wobble: 1, normals: 2 };
+      shaderModeN = map[e.target.value];
+      uniforms.uMode.value = shaderModeN;
+      document.getElementById('shader-display').textContent = e.target.value.toUpperCase();
+    };
+
+    document.getElementById('bands').oninput = e => {
+      uniforms.uBands.value = parseFloat(e.target.value);
+      document.getElementById('bandsVal').textContent = e.target.value;
+    };
+
+    document.getElementById('outlineThick').oninput = e => {
+      outlineUniforms.uThick.value = parseFloat(e.target.value);
+      document.getElementById('outlineVal').textContent = parseFloat(e.target.value).toFixed(3);
+    };
+
+    document.getElementById('wobbleAmp').oninput = e => {
+      uniforms.uWobbleAmp.value = parseFloat(e.target.value);
+      document.getElementById('ampVal').textContent = parseFloat(e.target.value).toFixed(2);
+    };
+
+    document.getElementById('swarmSpeed').oninput = e => {
+      speedMult = parseFloat(e.target.value);
+      document.getElementById('speedVal').textContent = speedMult.toFixed(1);
+    };
+
+    document.getElementById('lerpFactor').oninput = e => {
+      lerpFactor = parseFloat(e.target.value);
+      document.getElementById('lerpVal').textContent = lerpFactor.toFixed(3);
+    };
+
+    document.getElementById('outlineToggle').onchange = e => {
+      if (outlineMesh) outlineMesh.visible = e.target.checked;
+    };
+
+    document.getElementById('orbitCam').onchange = e => {
+      orbitCam = e.target.checked;
+    };
+
+    /* ════════════════════════════════════════════════════════════════════
+       RESIZE
+    ════════════════════════════════════════════════════════════════════ */
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+  })();
+  </script>
+</body>
+</html>
