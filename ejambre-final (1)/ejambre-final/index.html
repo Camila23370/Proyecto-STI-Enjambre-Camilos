@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ENJAMBRE — Proyecto Final | T1+T2+T4+T5+T6</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #0a0a12; color: #e0e0e0; font-family: 'Courier New', monospace; overflow: hidden; }
+    canvas { display: block; }
+
+    /* ── HUD métricas ─────────────────────────────────── */
+    #hud {
+      position: fixed; top: 16px; left: 16px; z-index: 10;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .stat-box {
+      background: rgba(0,0,0,0.72);
+      border: 1px solid #2a2a5a;
+      border-radius: 6px;
+      padding: 10px 16px;
+      min-width: 195px;
+    }
+    .stat-label { font-size: 10px; color: #7070b0; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 22px; font-weight: bold; color: #00e5ff; margin-top: 2px; }
+    .stat-value.ok   { color: #69ff47; }
+    .stat-value.warn { color: #ff6b35; }
+    .stat-sub { font-size: 10px; color: #505080; margin-top: 2px; }
+
+    /* ── Panel de controles ──────────────────────────── */
+    #controls {
+      position: fixed; top: 16px; right: 16px; z-index: 10;
+      background: rgba(0,0,0,0.80);
+      border: 1px solid #2a2a5a;
+      border-radius: 8px;
+      padding: 16px;
+      width: 250px;
+      max-height: 94vh;
+      overflow-y: auto;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    #controls::-webkit-scrollbar { width: 6px; }
+    #controls::-webkit-scrollbar-thumb { background: #2a2a5a; border-radius: 3px; }
+    #controls h2 { font-size: 11px; color: #34d399; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+    #controls h2:first-child { margin-top: 0; }
+    .ctrl-row { display: flex; flex-direction: column; gap: 4px; }
+    .ctrl-row label { font-size: 11px; color: #aaa; display: flex; justify-content: space-between; }
+    .ctrl-row label span { color: #34d399; }
+    input[type=range] { width: 100%; accent-color: #34d399; }
+    .ctrl-row.row-h { flex-direction: row; align-items: center; gap: 8px; font-size: 11px; color: #aaa; }
+    .ctrl-row.row-h input[type=checkbox] { accent-color: #34d399; width: 14px; height: 14px; }
+    .ctrl-row select {
+      background: #1a1a2e; border: 1px solid #3a3a6a; color: #ccc;
+      border-radius: 4px; padding: 4px 6px; font-size: 11px; width: 100%;
+    }
+    .divider { border-top: 1px solid #2a2a4a; margin: 2px 0; }
+
+    /* ── Info footer ─────────────────────────────────── */
+    #info {
+      position: fixed; bottom: 14px; left: 16px;
+      font-size: 10px; color: #454570; line-height: 1.8;
+      max-width: 480px;
+    }
+
+    /* ── VAT preview ─────────────────────────────────── */
+    #vat-preview {
+      position: fixed; bottom: 14px; right: 16px;
+      background: rgba(0,0,0,0.72);
+      border: 1px solid #2a2a5a; border-radius: 6px; padding: 8px;
+    }
+    #vat-preview canvas { border-radius: 4px; display: block; }
+    #vat-preview p { font-size: 10px; color: #505070; text-align: center; margin-top: 4px; }
+  </style>
+</head>
+<body>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="stat-box">
+      <div class="stat-label">FPS</div>
+      <div class="stat-value" id="fps-display">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Agentes</div>
+      <div class="stat-value ok" id="count-display">200</div>
+      <div class="stat-sub">InstancedMesh + VAT (T5)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Draw Calls</div>
+      <div class="stat-value" id="dc-display">--</div>
+      <div class="stat-sub">2 draw calls (cuerpo + contorno)</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Triángulos</div>
+      <div class="stat-value" id="tri-display">--</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Shader activo</div>
+      <div class="stat-value" style="font-size:13px; color:#34d399" id="shader-display">TOON</div>
+    </div>
+  </div>
+
+  <!-- Controles -->
+  <div id="controls">
+    <h2>Enjambre (T2 / T6)</h2>
+
+    <div class="ctrl-row">
+      <label>Agentes <span id="countVal">200</span></label>
+      <input type="range" id="agentCount" min="50" max="500" step="10" value="200">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Radio de percepción <span id="radiusVal">3.5</span></label>
+      <input type="range" id="perceptionRadius" min="1.0" max="7.0" step="0.1" value="3.5">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Peso separación <span id="sepVal">1.6</span></label>
+      <input type="range" id="sepWeight" min="0" max="3" step="0.05" value="1.6">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Peso alineación <span id="aliVal">1.1</span></label>
+      <input type="range" id="aliWeight" min="0" max="3" step="0.05" value="1.1">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Peso cohesión <span id="cohVal">0.9</span></label>
+      <input type="range" id="cohWeight" min="0" max="3" step="0.05" value="0.9">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Velocidad máxima <span id="maxSpeedVal">0.14</span></label>
+      <input type="range" id="maxSpeed" min="0.04" max="0.30" step="0.01" value="0.14">
+    </div>
+
+    <div class="divider"></div>
+    <h2>Render (T4 / T5)</h2>
+
+    <div class="ctrl-row">
+      <label>Shader activo <span></span></label>
+      <select id="shaderMode">
+        <option value="toon" selected>Toon / Cel-shading (T4)</option>
+        <option value="wobble">Vertex Wobble (T4)</option>
+        <option value="normals">Normales debug</option>
+      </select>
+    </div>
+
+    <div class="ctrl-row">
+      <label>Bandas Toon <span id="bandsVal">4</span></label>
+      <input type="range" id="bands" min="2" max="8" step="1" value="4">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Grosor contorno <span id="outlineVal">0.025</span></label>
+      <input type="range" id="outlineThick" min="0.0" max="0.08" step="0.005" value="0.025">
+    </div>
+
+    <div class="ctrl-row">
+      <label>Amplitud wobble <span id="ampVal">0.15</span></label>
+      <input type="range" id="wobbleAmp" min="0" max="0.6" step="0.01" value="0.15">
+    </div>
+
+    <div class="ctrl-row row-h">
+      <input type="checkbox" id="outlineToggle" checked>
+      <label for="outlineToggle">Contorno oscuro</label>
+    </div>
+
+    <div class="ctrl-row row-h">
+      <input type="checkbox" id="orbitCam" checked>
+      <label for="orbitCam">Cámara orbital</label>
+    </div>
+
+    <div class="ctrl-row row-h">
+      <input type="checkbox" id="showBounds" checked>
+      <label for="showBounds">Mostrar límites</label>
+    </div>
+  </div>
+
+  <!-- Footer info -->
+  <div id="info">
+    Proyecto final · Integración T1 + T2 + T4 + T5 + T6<br>
+    T6: Boids real — separación + alineación + cohesión con spatial hash grid (vecinos O(n))<br>
+    T5: InstancedMesh + VAT DataTexture Float32 (animación GPU) · T4: Toon/Cel-shading + Vertex Wobble + Outline<br>
+    T1: Escena base, iluminación puntual + ambiental, niebla exponencial
+  </div>
+
+  <!-- VAT texture preview -->
+  <div id="vat-preview">
+    <canvas id="vat-canvas" width="96" height="96"></canvas>
+    <p>VAT texture (T5)</p>
+  </div>
+
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <script>
+  (() => {
+    'use strict';
+
+    /* ════════════════════════════════════════════════════════════════════
+       PARÁMETROS GLOBALES
+    ════════════════════════════════════════════════════════════════════ */
+    let COUNT = 200;
+    const BOUNDS_XZ = 16;   // límites del enjambre en X/Z
+    const BOUNDS_Y  = 9;    // límite en Y (más aplastado, tipo bandada)
+    const EDGE_MARGIN = 4;  // zona de "empuje" hacia el centro cerca del borde
+
+    const VAT_FRAMES = 64;
+    const FPS_BAKE   = 24;
+
+    let speedMult   = 1.0;         // multiplicador global (compatibilidad UI)
+    let wobbleAmp   = 0.15;
+    let shaderModeN = 0;           // 0=toon 1=wobble 2=normals
+
+    // Parámetros de flocking (T6) — ajustables en tiempo real
+    let perceptionRadius = 3.5;
+    let sepWeight = 1.6;
+    let aliWeight = 1.1;
+    let cohWeight = 0.9;
+    let maxSpeed  = 0.14;
+    const maxForce   = 0.9;   // límite de fuerza de dirección (steering)
+    const boundsWeight = 1.6; // prioridad del "cerco" invisible
+
+    /* ════════════════════════════════════════════════════════════════════
+       ESCENA / RENDERER / CÁMARA
+    ════════════════════════════════════════════════════════════════════ */
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a12);
+    scene.fog = new THREE.FogExp2(0x0a0a12, 0.009);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 6, 34);
+    camera.lookAt(0, 0, 0);
+
+    /* ════════════════════════════════════════════════════════════════════
+       LUCES (T1) — punto principal + ambiental fría para el toon shader
+    ════════════════════════════════════════════════════════════════════ */
+    const pointLight = new THREE.PointLight(0xffffff, 1.15);
+    pointLight.position.set(14, 14, 12);
+    scene.add(pointLight);
+    scene.add(new THREE.AmbientLight(0x223344, 0.55));
+    scene.add(new THREE.HemisphereLight(0x334466, 0x0a0a12, 0.35));
+
+    // Bola visual de la luz (referencia)
+    const lightBall = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffff88 })
+    );
+    lightBall.position.copy(pointLight.position);
+    scene.add(lightBall);
+
+    // Contexto de escena: piso tipo grid + caja de límites del enjambre
+    const grid = new THREE.GridHelper(70, 28, 0x2a3a6a, 0x161630);
+    grid.position.y = -BOUNDS_Y - 3;
+    scene.add(grid);
+
+    const boundsBoxGeo = new THREE.BoxGeometry(BOUNDS_XZ * 2, BOUNDS_Y * 2, BOUNDS_XZ * 2);
+    const boundsBox = new THREE.LineSegments(
+      new THREE.EdgesGeometry(boundsBoxGeo),
+      new THREE.LineBasicMaterial({ color: 0x2a4a6a, transparent: true, opacity: 0.35 })
+    );
+    scene.add(boundsBox);
+
+    // Estrellas de fondo para dar profundidad
+    (function addStars() {
+      const starGeo = new THREE.BufferGeometry();
+      const starCount = 600;
+      const pos = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount; i++) {
+        const r = 60 + Math.random() * 60;
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        pos[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+        pos[i*3+1] = r * Math.cos(phi);
+        pos[i*3+2] = r * Math.sin(phi) * Math.sin(theta);
+      }
+      starGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const starMat = new THREE.PointsMaterial({ color: 0x556699, size: 0.6, sizeAttenuation: true });
+      scene.add(new THREE.Points(starGeo, starMat));
+    })();
+
+    /* ════════════════════════════════════════════════════════════════════
+       GEOMETRÍA DEL AGENTE — forma tipo pez/pájaro (cuerpo + aletas)
+       Construida a mano como triángulos sueltos (ya no-indexed por diseño,
+       ideal para VAT con gl_VertexID) en vez del icosaedro de T1/T2.
+    ════════════════════════════════════════════════════════════════════ */
+    function buildFishGeometry() {
+      const verts = [];
+      const tri = (a, b, c) => verts.push(...a, ...b, ...c);
+
+      // ── Cuerpo: bipirámide alargada (nariz ↔ cola) ───────────────────
+      const N      = [0, 0, -0.55];   // nariz (apunta hacia -Z = adelante)
+      const TAIL   = [0, 0,  0.40];   // base de la cola
+      const top    = [0,  0.16, -0.03];
+      const right  = [0.16, 0,  -0.03];
+      const bottom = [0, -0.16, -0.03];
+      const left   = [-0.16, 0, -0.03];
+
+      tri(N, top, right);
+      tri(N, right, bottom);
+      tri(N, bottom, left);
+      tri(N, left, top);
+      tri(TAIL, right, top);
+      tri(TAIL, bottom, right);
+      tri(TAIL, left, bottom);
+      tri(TAIL, top, left);
+
+      // ── Aletas pectorales (una a cada lado) ──────────────────────────
+      tri([0.08, 0, -0.13], [0.40, 0, 0.03], [0.08, 0, 0.08]);
+      tri([-0.08, 0, -0.13], [-0.08, 0, 0.08], [-0.40, 0, 0.03]);
+
+      // ── Aleta de cola en horquilla (dos lóbulos) ─────────────────────
+      tri([0, 0, 0.35], [0, 0.28, 0.55], [0, 0.03, 0.55]);
+      tri([0, 0, 0.35], [0, -0.03, 0.55], [0, -0.28, 0.55]);
+
+      // ── Aleta dorsal ──────────────────────────────────────────────────
+      tri([0, 0.15, 0.02], [0, 0.35, 0.12], [0, 0.15, 0.18]);
+
+      const positions = new Float32Array(verts);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    const agentGeo = buildFishGeometry();
+    const VERT_COUNT = agentGeo.attributes.position.count;
+
+    /* ════════════════════════════════════════════════════════════════════
+       VAT — Vertex Animation Texture (T5)
+       Hornea una animación de "pulso" (tipo ondulación de nado) sobre el
+       cuerpo del pez en un
+       DataTexture RGBA Float32 (VERT_COUNT × VAT_FRAMES).
+    ════════════════════════════════════════════════════════════════════ */
+    const vatData = new Float32Array(VERT_COUNT * VAT_FRAMES * 4);
+    const posAttr = agentGeo.attributes.position;
+    const nrmAttr = agentGeo.attributes.normal;
+
+    for (let f = 0; f < VAT_FRAMES; f++) {
+      const t = (f / VAT_FRAMES) * Math.PI * 2;
+      for (let v = 0; v < VERT_COUNT; v++) {
+        const r      = Math.sqrt(posAttr.getX(v)**2 + posAttr.getY(v)**2 + posAttr.getZ(v)**2);
+        const pulse  = 0.08 * Math.sin(t + r * 6.0);
+        const nx     = nrmAttr.getX(v);
+        const ny     = nrmAttr.getY(v);
+        const nz     = nrmAttr.getZ(v);
+        const squash = 0.5 + 0.5 * Math.sin(t * 2 + Math.PI * 0.5);
+        const idx = (f * VERT_COUNT + v) * 4;
+        vatData[idx]     = nx * pulse;
+        vatData[idx + 1] = ny * pulse;
+        vatData[idx + 2] = nz * pulse;
+        vatData[idx + 3] = squash;
+      }
+    }
+
+    const vatTex = new THREE.DataTexture(
+      vatData, VERT_COUNT, VAT_FRAMES,
+      THREE.RGBAFormat, THREE.FloatType
+    );
+    vatTex.magFilter = THREE.LinearFilter;
+    vatTex.minFilter = THREE.LinearFilter;
+    vatTex.wrapS = THREE.RepeatWrapping;
+    vatTex.wrapT = THREE.RepeatWrapping;
+    vatTex.needsUpdate = true;
+
+    // Preview VAT
+    (function drawVATPreview() {
+      const c   = document.getElementById('vat-canvas');
+      const ctx = c.getContext('2d');
+      const id  = ctx.createImageData(96, 96);
+      for (let py = 0; py < 96; py++) {
+        for (let px = 0; px < 96; px++) {
+          const srcX = Math.floor(px * VERT_COUNT / 96);
+          const srcY = Math.floor(py * VAT_FRAMES  / 96);
+          const src  = (srcY * VERT_COUNT + srcX) * 4;
+          const dst  = (py * 96 + px) * 4;
+          id.data[dst]   = Math.min(255,Math.max(0,(vatData[src]   +0.2)/0.4*255));
+          id.data[dst+1] = Math.min(255,Math.max(0,(vatData[src+1] +0.2)/0.4*255));
+          id.data[dst+2] = Math.min(255,Math.max(0,(vatData[src+2] +0.2)/0.4*255));
+          id.data[dst+3] = 255;
+        }
+      }
+      ctx.putImageData(id, 0, 0);
+    })();
+
+    /* ════════════════════════════════════════════════════════════════════
+       SHADERS (T4 integrado en el pipeline VAT + InstancedMesh)
+    ════════════════════════════════════════════════════════════════════ */
+    const vertexShader = `
+      /* T5 — VAT */
+      attribute float aTimeOffset;
+      uniform sampler2D uVAT;
+      uniform float uTime;
+      uniform float uVATFrames;
+      uniform float uVertCount;
+      uniform float uFPS;
+
+      /* T4 — Toon / Wobble */
+      uniform vec3  uLightPos;
+      uniform float uWobbleAmp;
+      uniform float uWobbleFreq;
+      uniform float uWobbleSpeed;
+      uniform int   uMode;   /* 0=toon 1=wobble 2=normals */
+
+      varying vec3  vNormal;
+      varying vec3  vWorldPos;
+      varying float vWave;
+
+      void main() {
+        vec3 pos = position;
+
+        /* ── VAT (T5): samplear animación horneada ─────────────────── */
+        float u = (float(gl_VertexID) + 0.5) / uVertCount;
+        float v = fract(uTime * uFPS / uVATFrames + aTimeOffset);
+        vec4 vatSample = texture2D(uVAT, vec2(u, v));
+        pos += vatSample.xyz;
+
+        /* ── Vertex Wobble (T4): deformación senoidal adicional ────── */
+        float wave = 0.0;
+        if (uMode == 1) {
+          wave = uWobbleAmp * sin(uWobbleFreq * pos.y - uTime * uWobbleSpeed);
+          pos.x += wave;
+          pos.z += wave * 0.5;
+        }
+        vWave = wave / max(uWobbleAmp, 0.001) * 0.5 + 0.5;
+
+        /* ── Transformar con instanceMatrix (T5) ───────────────────── */
+        vec4 worldPos = instanceMatrix * vec4(pos, 1.0);
+        vWorldPos = worldPos.xyz;
+        vNormal   = normalize(mat3(instanceMatrix) * normal);
+
+        gl_Position = projectionMatrix * modelViewMatrix * worldPos;
+      }
+    `;
+
+    const fragmentShader = `
+      uniform vec3  uLightPos;
+      uniform vec3  uCamPos;
+      uniform vec3  uBase;
+      uniform vec3  uShadow;
+      uniform float uBands;
+      uniform float uSpec;
+      uniform float uSpecSize;
+      uniform int   uMode;
+
+      varying vec3  vNormal;
+      varying vec3  vWorldPos;
+      varying float vWave;
+
+      void main() {
+        vec3  N    = normalize(vNormal);
+        vec3  L    = normalize(uLightPos - vWorldPos);
+        vec3  V    = normalize(uCamPos   - vWorldPos);
+        vec3  H    = normalize(L + V);
+        float diff = max(dot(N, L), 0.0);
+
+        if (uMode == 0) {
+          /* ── Toon / Cel-shading (T4) ─── */
+          float band    = floor(diff * uBands) / uBands;
+          float specRaw = step(uSpecSize, pow(max(dot(N, H), 0.0), 32.0)) * uSpec;
+          gl_FragColor  = vec4(mix(uShadow, uBase, band) + specRaw * 0.6, 1.0);
+
+        } else if (uMode == 1) {
+          /* ── Vertex Wobble color (T4) ── */
+          vec3 colA = vec3(0.15, 0.35, 0.85);
+          vec3 colB = vec3(0.95, 0.30, 0.60);
+          vec3 base = mix(colA, colB, vWave);
+          float spec = pow(max(dot(N, H), 0.0), 48.0);
+          gl_FragColor = vec4(0.1*base + diff*base + spec*0.8, 1.0);
+
+        } else {
+          /* ── Normales debug ─────────── */
+          gl_FragColor = vec4(N * 0.5 + 0.5, 1.0);
+        }
+      }
+    `;
+
+    // Contorno (T4 — back-face inflate sobre InstancedMesh)
+    const outlineVert = `
+      uniform float uThick;
+      void main() {
+        vec3 inflated   = position + normal * uThick;
+        gl_Position     = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(inflated, 1.0);
+      }
+    `;
+    const outlineFrag = `void main(){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); }`;
+
+    /* ════════════════════════════════════════════════════════════════════
+       UNIFORMS
+    ════════════════════════════════════════════════════════════════════ */
+    const uniforms = {
+      uVAT      : { value: vatTex },
+      uTime     : { value: 0 },
+      uVATFrames: { value: VAT_FRAMES },
+      uVertCount: { value: VERT_COUNT },
+      uFPS      : { value: FPS_BAKE },
+      uLightPos : { value: new THREE.Vector3(14, 14, 12) },
+      uCamPos   : { value: camera.position.clone() },
+      uBase     : { value: new THREE.Vector3(0.13, 0.67, 1.0) },
+      uShadow   : { value: new THREE.Vector3(0.04, 0.11, 0.34) },
+      uBands    : { value: 4.0 },
+      uSpec     : { value: 1.0 },
+      uSpecSize : { value: 0.5 },
+      uMode     : { value: 0 },
+      uWobbleAmp  : { value: 0.15 },
+      uWobbleFreq : { value: 5.0 },
+      uWobbleSpeed: { value: 2.0 },
+    };
+
+    const outlineUniforms = {
+      uThick: { value: 0.025 },
+    };
+
+    const agentMat = new THREE.ShaderMaterial({
+      uniforms, vertexShader, fragmentShader, side: THREE.DoubleSide,
+    });
+
+    const outlineMat = new THREE.ShaderMaterial({
+      uniforms: outlineUniforms, vertexShader: outlineVert, fragmentShader: outlineFrag, side: THREE.BackSide,
+    });
+
+    /* ════════════════════════════════════════════════════════════════════
+       T6 — FLOCKING REAL (separación + alineación + cohesión)
+       con spatial hash grid para búsqueda de vecinos ~O(n)
+    ════════════════════════════════════════════════════════════════════ */
+    let agentStates = [];
+
+    function createAgentStates(count) {
+      const states = [];
+      for (let i = 0; i < count; i++) {
+        states.push({
+          px: (Math.random() - 0.5) * BOUNDS_XZ * 1.4,
+          py: (Math.random() - 0.5) * BOUNDS_Y  * 1.4,
+          pz: (Math.random() - 0.5) * BOUNDS_XZ * 1.4,
+          vx: (Math.random() - 0.5) * maxSpeed,
+          vy: (Math.random() - 0.5) * maxSpeed,
+          vz: (Math.random() - 0.5) * maxSpeed,
+          hue: Math.random(),
+          timeOffset: Math.random(),
+        });
+      }
+      return states;
+    }
+
+    // ── Spatial hash grid — se reconstruye cada frame (O(n)) ───────────
+    const spatialGrid = new Map();
+
+    function buildSpatialGrid(states, cellSize) {
+      spatialGrid.clear();
+      for (let i = 0; i < states.length; i++) {
+        const s = states[i];
+        const cx = Math.floor(s.px / cellSize);
+        const cy = Math.floor(s.py / cellSize);
+        const cz = Math.floor(s.pz / cellSize);
+        const key = cx + ',' + cy + ',' + cz;
+        let arr = spatialGrid.get(key);
+        if (!arr) { arr = []; spatialGrid.set(key, arr); }
+        arr.push(i);
+      }
+    }
+
+    const neighborBuf = []; // reutilizado cada agente para evitar GC
+
+    function collectNeighbors(s, cellSize) {
+      neighborBuf.length = 0;
+      const cx = Math.floor(s.px / cellSize);
+      const cy = Math.floor(s.py / cellSize);
+      const cz = Math.floor(s.pz / cellSize);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const arr = spatialGrid.get((cx+dx) + ',' + (cy+dy) + ',' + (cz+dz));
+            if (arr) for (let k = 0; k < arr.length; k++) neighborBuf.push(arr[k]);
+          }
+        }
+      }
+      return neighborBuf;
+    }
+
+    // Vector auxiliar reutilizado para clamps de steering
+    function clampVec3(x, y, z, maxLen) {
+      const len = Math.sqrt(x*x + y*y + z*z);
+      if (len > maxLen && len > 0) {
+        const s = maxLen / len;
+        return [x*s, y*s, z*s];
+      }
+      return [x, y, z];
+    }
+
+    function updateFlock() {
+      const cellSize = Math.max(perceptionRadius, 1.0);
+      buildSpatialGrid(agentStates, cellSize);
+      const sepRadius = perceptionRadius * 0.55;
+      const r2 = perceptionRadius * perceptionRadius;
+
+      for (let i = 0; i < agentStates.length; i++) {
+        const s = agentStates[i];
+        const neighbors = collectNeighbors(s, cellSize);
+
+        let sepX=0, sepY=0, sepZ=0, sepN=0;
+        let aliVX=0, aliVY=0, aliVZ=0, aliN=0;
+        let cohX=0, cohY=0, cohZ=0, cohN=0;
+
+        for (let k = 0; k < neighbors.length; k++) {
+          const j = neighbors[k];
+          if (j === i) continue;
+          const o = agentStates[j];
+          const dx = s.px - o.px, dy = s.py - o.py, dz = s.pz - o.pz;
+          const dSq = dx*dx + dy*dy + dz*dz;
+          if (dSq > r2 || dSq < 1e-6) continue;
+
+          const dist = Math.sqrt(dSq);
+          if (dist < sepRadius) {
+            const inv = 1 / Math.max(dist, 0.3);
+            sepX += dx * inv; sepY += dy * inv; sepZ += dz * inv; sepN++;
+          }
+          aliVX += o.vx; aliVY += o.vy; aliVZ += o.vz; aliN++;
+          cohX  += o.px; cohY  += o.py; cohZ  += o.pz; cohN++;
+        }
+
+        let fx = 0, fy = 0, fz = 0;
+
+        // ── Separación: steer away, alejarse de vecinos cercanos ──────
+        if (sepN > 0) {
+          let dx = sepX / sepN, dy = sepY / sepN, dz = sepZ / sepN;
+          const len = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+          dx = dx/len*maxSpeed - s.vx; dy = dy/len*maxSpeed - s.vy; dz = dz/len*maxSpeed - s.vz;
+          const [cx,cy,cz] = clampVec3(dx,dy,dz,maxForce);
+          fx += cx*sepWeight; fy += cy*sepWeight; fz += cz*sepWeight;
+        }
+
+        // ── Alineación: igualar velocidad promedio de vecinos ─────────
+        if (aliN > 0) {
+          let dx = aliVX/aliN, dy = aliVY/aliN, dz = aliVZ/aliN;
+          const len = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+          dx = dx/len*maxSpeed - s.vx; dy = dy/len*maxSpeed - s.vy; dz = dz/len*maxSpeed - s.vz;
+          const [cx,cy,cz] = clampVec3(dx,dy,dz,maxForce);
+          fx += cx*aliWeight; fy += cy*aliWeight; fz += cz*aliWeight;
+        }
+
+        // ── Cohesión: dirigirse al centro de masa de los vecinos ──────
+        if (cohN > 0) {
+          let dx = cohX/cohN - s.px, dy = cohY/cohN - s.py, dz = cohZ/cohN - s.pz;
+          const len = Math.sqrt(dx*dx+dy*dy+dz*dz) || 1;
+          dx = dx/len*maxSpeed - s.vx; dy = dy/len*maxSpeed - s.vy; dz = dz/len*maxSpeed - s.vz;
+          const [cx,cy,cz] = clampVec3(dx,dy,dz,maxForce);
+          fx += cx*cohWeight; fy += cy*cohWeight; fz += cz*cohWeight;
+        }
+
+        // ── Cerco invisible: empuja de regreso cerca de los bordes ────
+        let bx=0, by=0, bz=0;
+        if (s.px >  BOUNDS_XZ - EDGE_MARGIN) bx = -(s.px - (BOUNDS_XZ - EDGE_MARGIN));
+        if (s.px < -BOUNDS_XZ + EDGE_MARGIN) bx =  (-BOUNDS_XZ + EDGE_MARGIN) - s.px;
+        if (s.py >  BOUNDS_Y  - EDGE_MARGIN) by = -(s.py - (BOUNDS_Y  - EDGE_MARGIN));
+        if (s.py < -BOUNDS_Y  + EDGE_MARGIN) by =  (-BOUNDS_Y  + EDGE_MARGIN) - s.py;
+        if (s.pz >  BOUNDS_XZ - EDGE_MARGIN) bz = -(s.pz - (BOUNDS_XZ - EDGE_MARGIN));
+        if (s.pz < -BOUNDS_XZ + EDGE_MARGIN) bz =  (-BOUNDS_XZ + EDGE_MARGIN) - s.pz;
+        if (bx || by || bz) {
+          const len = Math.sqrt(bx*bx+by*by+bz*bz) || 1;
+          bx = bx/len*maxSpeed - s.vx; by = by/len*maxSpeed - s.vy; bz = bz/len*maxSpeed - s.vz;
+          const [cx,cy,cz] = clampVec3(bx,by,bz,maxForce);
+          fx += cx*boundsWeight; fy += cy*boundsWeight; fz += cz*boundsWeight;
+        }
+
+        // ── Integrar velocidad y posición ──────────────────────────────
+        s.vx += fx; s.vy += fy; s.vz += fz;
+        const spd = Math.sqrt(s.vx*s.vx + s.vy*s.vy + s.vz*s.vz);
+        if (spd > maxSpeed) { const sc = maxSpeed/spd; s.vx*=sc; s.vy*=sc; s.vz*=sc; }
+        else if (spd < maxSpeed*0.35 && spd > 1e-5) { const sc = (maxSpeed*0.35)/spd; s.vx*=sc; s.vy*=sc; s.vz*=sc; }
+
+        s.px += s.vx * speedMult;
+        s.py += s.vy * speedMult;
+        s.pz += s.vz * speedMult;
+      }
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       INSTANCED MESH — construir / reconstruir al cambiar COUNT
+    ════════════════════════════════════════════════════════════════════ */
+    let mesh, outlineMesh;
+
+    function buildSwarm(count) {
+      if (mesh)        scene.remove(mesh);
+      if (outlineMesh) scene.remove(outlineMesh);
+
+      const geo = agentGeo.clone();
+      const timeOffsets = new Float32Array(count);
+      agentStates = createAgentStates(count);
+      for (let i = 0; i < count; i++) timeOffsets[i] = agentStates[i].timeOffset;
+      geo.setAttribute('aTimeOffset', new THREE.InstancedBufferAttribute(timeOffsets, 1));
+
+      mesh = new THREE.InstancedMesh(geo, agentMat, count);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+      for (let i = 0; i < count; i++) {
+        mesh.setColorAt(i, new THREE.Color().setHSL(agentStates[i].hue, 0.85, 0.55));
+      }
+      mesh.instanceColor.needsUpdate = true;
+      scene.add(mesh);
+
+      outlineMesh = new THREE.InstancedMesh(geo, outlineMat, count);
+      outlineMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(outlineMesh);
+    }
+
+    buildSwarm(COUNT);
+
+    /* ════════════════════════════════════════════════════════════════════
+       DUMMY para setMatrixAt — orientado hacia la dirección de vuelo
+    ════════════════════════════════════════════════════════════════════ */
+    const dummy = new THREE.Object3D();
+    const lookTarget = new THREE.Vector3();
+
+    /* ════════════════════════════════════════════════════════════════════
+       FPS
+    ════════════════════════════════════════════════════════════════════ */
+    const fpsEl = document.getElementById('fps-display');
+    const dcEl  = document.getElementById('dc-display');
+    const triEl = document.getElementById('tri-display');
+    let lastFPSTime = performance.now(), frameCount = 0;
+    let camAngle = 0, orbitCam = true;
+
+    /* ════════════════════════════════════════════════════════════════════
+       ANIMATE
+    ════════════════════════════════════════════════════════════════════ */
+    function animate() {
+      requestAnimationFrame(animate);
+      const now = performance.now();
+      const t   = now * 0.001;
+      frameCount++;
+
+      uniforms.uTime.value = t;
+      uniforms.uCamPos.value.copy(camera.position);
+      uniforms.uLightPos.value.copy(pointLight.position);
+      lightBall.position.copy(pointLight.position);
+
+      if (now - lastFPSTime >= 500) {
+        const fps = Math.round(frameCount * 1000 / (now - lastFPSTime));
+        frameCount = 0;
+        lastFPSTime = now;
+        fpsEl.textContent = fps;
+        fpsEl.className   = 'stat-value ' + (fps >= 30 ? 'ok' : 'warn');
+        dcEl.textContent  = renderer.info.render.calls;
+        triEl.textContent = (renderer.info.render.triangles / 1000).toFixed(1) + 'k';
+        renderer.info.reset();
+      }
+
+      // ── T6: flocking (separación + alineación + cohesión) ───────────
+      updateFlock();
+
+      for (let i = 0; i < agentStates.length; i++) {
+        const a = agentStates[i];
+        dummy.position.set(a.px, a.py, a.pz);
+
+        const speedSq = a.vx*a.vx + a.vy*a.vy + a.vz*a.vz;
+        if (speedSq > 1e-6) {
+          lookTarget.set(a.px + a.vx, a.py + a.vy, a.pz + a.vz);
+          dummy.up.set(0, 1, 0);
+          dummy.lookAt(lookTarget);
+        }
+        dummy.scale.setScalar(1.0);
+        dummy.updateMatrix();
+
+        mesh.setMatrixAt(i, dummy.matrix);
+        outlineMesh.setMatrixAt(i, dummy.matrix);
+      }
+
+      mesh.instanceMatrix.needsUpdate = true;
+      outlineMesh.instanceMatrix.needsUpdate = true;
+
+      if (orbitCam) {
+        camAngle += 0.0010;
+        camera.position.x = Math.cos(camAngle) * 34;
+        camera.position.z = Math.sin(camAngle) * 34;
+        camera.position.y = 8;
+        camera.lookAt(0, 0, 0);
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    /* ════════════════════════════════════════════════════════════════════
+       UI — CONTROLES
+    ════════════════════════════════════════════════════════════════════ */
+    document.getElementById('agentCount').oninput = e => {
+      COUNT = parseInt(e.target.value);
+      document.getElementById('countVal').textContent = COUNT;
+      document.getElementById('count-display').textContent = COUNT;
+      buildSwarm(COUNT);
+    };
+
+    document.getElementById('perceptionRadius').oninput = e => {
+      perceptionRadius = parseFloat(e.target.value);
+      document.getElementById('radiusVal').textContent = perceptionRadius.toFixed(1);
+    };
+
+    document.getElementById('sepWeight').oninput = e => {
+      sepWeight = parseFloat(e.target.value);
+      document.getElementById('sepVal').textContent = sepWeight.toFixed(2);
+    };
+
+    document.getElementById('aliWeight').oninput = e => {
+      aliWeight = parseFloat(e.target.value);
+      document.getElementById('aliVal').textContent = aliWeight.toFixed(2);
+    };
+
+    document.getElementById('cohWeight').oninput = e => {
+      cohWeight = parseFloat(e.target.value);
+      document.getElementById('cohVal').textContent = cohWeight.toFixed(2);
+    };
+
+    document.getElementById('maxSpeed').oninput = e => {
+      maxSpeed = parseFloat(e.target.value);
+      document.getElementById('maxSpeedVal').textContent = maxSpeed.toFixed(2);
+    };
+
+    document.getElementById('shaderMode').onchange = e => {
+      const map = { toon: 0, wobble: 1, normals: 2 };
+      shaderModeN = map[e.target.value];
+      uniforms.uMode.value = shaderModeN;
+      document.getElementById('shader-display').textContent = e.target.value.toUpperCase();
+    };
+
+    document.getElementById('bands').oninput = e => {
+      uniforms.uBands.value = parseFloat(e.target.value);
+      document.getElementById('bandsVal').textContent = e.target.value;
+    };
+
+    document.getElementById('outlineThick').oninput = e => {
+      outlineUniforms.uThick.value = parseFloat(e.target.value);
+      document.getElementById('outlineVal').textContent = parseFloat(e.target.value).toFixed(3);
+    };
+
+    document.getElementById('wobbleAmp').oninput = e => {
+      uniforms.uWobbleAmp.value = parseFloat(e.target.value);
+      document.getElementById('ampVal').textContent = parseFloat(e.target.value).toFixed(2);
+    };
+
+    document.getElementById('outlineToggle').onchange = e => {
+      if (outlineMesh) outlineMesh.visible = e.target.checked;
+    };
+
+    document.getElementById('orbitCam').onchange = e => {
+      orbitCam = e.target.checked;
+    };
+
+    document.getElementById('showBounds').onchange = e => {
+      boundsBox.visible = e.target.checked;
+    };
+
+    /* ════════════════════════════════════════════════════════════════════
+       RESIZE
+    ════════════════════════════════════════════════════════════════════ */
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+  })();
+  </script>
+</body>
+</html>
