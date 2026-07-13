@@ -1,0 +1,159 @@
+\documentclass[sigconf,nonacm]{acmart}
+
+\settopmatter{printacmref=false}
+\renewcommand\footnotetextcopyrightpermission[1]{}
+\pagestyle{plain}
+
+\begin{document}
+
+\title{Capas Ópticas Adaptativas para Grillas de Celdas Altas: Descripción y Crítica de un Avance Reciente en Simulación Euleriana de Líquidos}
+
+\author{Javier Arturo Cirilo Vargas}
+\affiliation{%
+  \institution{Universidad Autónoma Metropolitana - Cuajimalpa}
+  \city{CDMX}
+  \country{México}
+}
+
+\author{Julio César Aguirre Cresencio}
+\affiliation{%
+  \institution{Universidad Autónoma Metropolitana - Cuajimalpa}
+  \city{CDMX}
+  \country{México}
+}
+
+\author{Camila Anaid Cruz Rodríguez}
+\affiliation{%
+  \institution{Universidad Autónoma Metropolitana - Cuajimalpa}
+  \city{CDMX}
+  \country{México}
+}
+
+\begin{abstract}
+Este reporte presenta una descripción y una crítica del artículo \emph{Adaptive Optical Layers: Efficient Tall Cell Grids for Liquid Simulation}, de Fumiya Narita y Takashi Kanai (Universidad de Tokio), publicado en \emph{Computer Graphics Forum} como parte de la sesión ``Go with the Flow: Fluid Simulation and Rendering'' de EUROGRAPHICS 2026. El trabajo aborda el cuello de botella computacional de la proyección de presión en simulación euleriana de líquidos mediante una extensión de las llamadas \emph{grillas de celdas altas} (\emph{tall cell grids}), en las que el espesor de la capa óptica --la región discretizada con una grilla regular cerca de la superficie del líquido-- se adapta dinámicamente según el movimiento del fluido, en lugar de permanecer fijo como en trabajos anteriores. Se describe la construcción de esta capa adaptativa, el esquema de acoplamiento bidireccional con cuerpos rígidos y los resultados experimentales reportados (aceleraciones de 2.5$\times$ a 3$\times$ en el paso de proyección y de 1.5$\times$ a 2$\times$ en el tiempo total de simulación). Posteriormente se ofrece un análisis crítico de sus aportaciones, sus limitaciones metodológicas y las oportunidades de mejora que el propio equipo de autores reconoce, contrastándolas con el resto de los trabajos de la misma sesión.
+\end{abstract}
+
+\maketitle
+
+\section{Introducción}
+La simulación euleriana de líquidos es una de las herramientas centrales de los gráficos por computadora para producir efectos visuales creíbles de agua, salpicaduras y superficies libres. Sin embargo, su costo computacional crece muy rápidamente con el número de celdas de la grilla, y el paso de proyección de presión --que impone la condición de incompresibilidad-- es habitualmente el principal cuello de botella. Por ello, buena parte de la investigación reciente en este campo se ha concentrado en diseñar estructuras de discretización más eficientes, entre las que destacan las llamadas \emph{grillas de celdas altas} (\emph{tall cell grids}), que combinan la idea clásica de los métodos de campo de altura (\emph{height-field}) con un solucionador tridimensional completo cerca de la superficie, tal como describen ampliamente Narita y Kanai en el artículo aquí revisado \cite{narita2026}.
+
+Este reporte se inscribe en la sesión de EUROGRAPHICS 2026 titulada \emph{``Go with the Flow: Fluid Simulation and Rendering''}, la cual reúne varios trabajos recientes sobre simulación y renderizado de fluidos. De entre ellos, este documento se enfoca exclusivamente en el último artículo de dicho conjunto: \emph{Adaptive Optical Layers: Efficient Tall Cell Grids for Liquid Simulation}, de Narita y Kanai \cite{narita2026}, cuyo objetivo es hacer que el espesor de la capa óptica de una grilla de celdas altas deje de ser un parámetro fijo y global, y pase a adaptarse localmente según la dinámica del líquido. Como referencia complementaria sobre la comunidad de investigación en animación basada en física dentro de la cual se ubica este trabajo, se consultó también el repositorio de publicaciones de C.~Rössl \cite{roessl2026}. El resto del reporte se organiza así: la Sección 2 plantea el problema que motiva el trabajo; la Sección 3 describe la propuesta metodológica; la Sección 4 resume los resultados experimentales; la Sección 5 ofrece un análisis crítico del artículo; y la Sección 6 concluye.
+
+\section{Planteamiento del Problema}
+
+\subsection{El cuello de botella de la proyección de presión}
+En una simulación euleriana estándar, cada paso de tiempo requiere resolver un sistema lineal de gran tamaño para obtener el campo de presión que hace que la velocidad del fluido sea libre de divergencia. El tamaño de este sistema es proporcional al número de celdas de la grilla, por lo que refinar la resolución para capturar detalles finos de la superficie --como coronas, columnas de Worthington o salpicaduras-- incrementa drásticamente el tiempo de cómputo. Las grillas de celdas altas mitigan este problema al representar, mediante celdas rectangulares elongadas, las regiones del líquido alejadas de la superficie (donde se asume que la presión varía linealmente), mientras que solo la región cercana a la superficie --la \emph{capa óptica}-- se discretiza con una grilla cúbica regular de alta resolución.
+
+\subsection{Rigidez de las capas ópticas de espesor fijo}
+El problema central que identifican los autores es que, en todos los trabajos previos sobre grillas de celdas altas \cite{narita2026}, el espesor de la capa óptica se fija de manera uniforme en todo el dominio (típicamente en un cuarto de la altura del líquido). Esta elección homogénea obliga a un compromiso poco flexible: un espesor grande garantiza fidelidad visual mediante la reproducción de detalles dinámicos, pero anula buena parte del ahorro computacional; un espesor pequeño acelera la proyección, pero degrada visiblemente fenómenos como coronas y salpicaduras en las zonas donde el líquido se mueve con mayor energía. El artículo revisado busca resolver esta disyuntiva permitiendo que el espesor de la capa óptica varíe espacialmente, siendo mayor solo en las regiones donde realmente se necesita.
+
+\section{Descripción del Artículo}
+El método propuesto por Narita y Kanai se construye sobre el marco variacional de celdas altas de un trabajo previo de los mismos autores, descrito en la sección de trabajo relacionado del propio artículo \cite{narita2026}, y aporta dos contribuciones principales: (1) una capa óptica cuyo espesor se adapta dinámicamente según el movimiento del líquido, y (2) un esquema de acoplamiento bidireccional entre cuerpos rígidos y líquido que funciona incluso cuando el cuerpo interseca directamente una celda alta.
+
+\subsection{Construcción de la capa óptica adaptativa}
+La construcción se realiza en dos etapas. En la primera, se estima la forma inicial de la capa óptica aplicando una operación de dilatación con una distancia que varía espacialmente. Para cada columna vertical de la grilla se define una función de costo $e(i,j,k)$ que mide, cara por cara, la diferencia entre la velocidad original y la que resultaría de colapsar esa columna en una única celda alta (promediando la componente vertical e interpolando la horizontal mediante mínimos cuadrados). Esta métrica está inspirada deliberadamente en el origen de las grillas de celdas altas como una generalización de los métodos de campo de altura, en lugar de recurrir a medidas más habituales en refinamiento adaptativo, como el gradiente de velocidad o la curvatura de la superficie, que los autores descartan por ser propensas a producir valores extremos. El error acumulado por columna, $E(i,k)$, se transforma en una distancia de dilatación mediante
+\[
+d(i,k)=\mathrm{clamp}\!\left(\alpha\, E(i,k)\,\Delta x,\; d_{\min},\, d_{\max}\right),
+\]
+y esta distancia se usa para dilatar la capa óptica desde la superficie del líquido (usando distancia de Manhattan por simplicidad). En la segunda etapa se suaviza el campo de alturas resultante mediante un filtro de promedio móvil restringido (ventana $9\times9$, cinco iteraciones) que impide que la capa suavizada exceda la altura original, evitando así discontinuidades bruscas que podrían desestabilizar la simulación. Además, el método incluye un tratamiento específico para líquido en el aire --gotas y salpicaduras separadas de la superficie principal-- asignándoles un espesor constante $d_{\mathrm{air}}$.
+
+\subsection{Acoplamiento bidireccional con cuerpos rígidos}
+Cuando la capa óptica es delgada, un cuerpo rígido puede intersecar directamente una celda alta, un caso que el trabajo previo de los mismos autores no contemplaba. Para resolverlo, se introduce una grilla uniforme virtual dentro de cada celda alta y se calcula la contribución de acoplamiento (matrices $[J]$, siguiendo una formulación variacional de acoplamiento sólido-fluido descrita en el propio artículo \cite{narita2026}) en dicha grilla virtual. Un parámetro escalar $s\in[0,1]$, que representa la posición relativa del punto de intersección dentro de la celda alta, permite distribuir esa contribución de forma ponderada entre las dos muestras de presión (superior e inferior) que posee cada celda alta.
+
+\subsection{Bucle de simulación}
+El método se integra en un simulador basado en EXNBFLIP y en un solucionador variacional de presión resuelto con gradiente conjugado precondicionado (ICCG), ambos heredados del trabajo previo de los mismos autores \cite{narita2026}. El bucle de simulación (Algoritmo 1 del artículo) es prácticamente idéntico al de la técnica de celdas altas convencional, salvo por la etapa adicional de construcción de la capa óptica y una ligera modificación del ensamblaje de la matriz de proyección para incorporar el acoplamiento con cuerpos rígidos.
+
+\section{Resultados Experimentales}
+Los autores evalúan su método en cuatro escenas (\emph{Animals Drop}, \emph{Breaking Dam}, \emph{Pouring Water} y \emph{Lucy in the Rain}), comparándolo contra la variante convencional de celdas altas con espesor de capa óptica uniforme. Se reporta una aceleración del paso de proyección de entre 2.5$\times$ y 3$\times$, y una aceleración total de la simulación de entre 1.5$\times$ y 2$\times$, gracias a una reducción sustancial en el número de celdas de la capa óptica (por ejemplo, de 2.3 millones a 841 mil celdas en la escena \emph{Animals Drop}). Las curvas de energía cinética a lo largo del tiempo resultan muy similares entre el método propuesto y el de referencia, lo que los autores interpretan como evidencia de que la calidad visual se preserva a pesar de usar muchas menos celdas. El mapa de color del espesor de la capa óptica muestra, de forma consistente con la intuición del diseño, que las regiones de mayor espesor coinciden con zonas de impacto de chorros, gotas o bordes afilados de la geometría inicial.
+
+\begin{table*}[t]
+\caption{Resumen del tiempo por paso (proyección vs.\ total) reportado en el artículo, método convencional vs.\ propuesto.}
+\label{tab:resultados}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Escena} & \textbf{Proyección (convencional)} & \textbf{Proyección (propuesto)} & \textbf{Total (convencional)} & \textbf{Total (propuesto)} \\
+\midrule
+Animals Drop     & 15.58 s & 5.11 s  & 22.44 s & 12.66 s \\
+Breaking Dam     & 12.67 s & 4.40 s  & 16.65 s & 9.24 s  \\
+Pouring Water    & 20.99 s & 7.73 s  & 30.08 s & 18.11 s \\
+Lucy in the Rain & 24.31 s & 9.25 s  & 34.55 s & 21.99 s \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+Como puede observarse en la Tabla \ref{tab:resultados}, el ahorro de tiempo en el paso de proyección es consistentemente superior al 60\% en las cuatro escenas, pero el ahorro en el tiempo total de la simulación es notablemente menor (entre el 36\% y el 44\%), pues la advección, la reconstrucción de celdas altas y las operaciones propias de EXNBFLIP no se ven beneficiadas por la propuesta. Este dato, aportado por los propios autores, resulta clave para la crítica que se desarrolla en la siguiente sección.
+
+\section{Análisis Crítico}
+El artículo presenta una idea sencilla, bien motivada físicamente y fácil de integrar en marcos de trabajo ya existentes de celdas altas, lo cual es señalado explícitamente por los propios autores como una ventaja de diseño. La función de costo inspirada en la génesis de las grillas de celdas altas (medir cuánto se desvía el campo de velocidad real respecto de la hipótesis de campo de altura) es una elección elegante, pues evita depender de heurísticas genéricas de refinamiento --como la curvatura-- que los autores muestran ser inadecuadas en este contexto. La Tabla \ref{tab:critica} resume las fortalezas y limitaciones identificadas en el artículo.
+
+\begin{table}[t]
+\caption{Fortalezas y limitaciones del método de capas ópticas adaptativas.}
+\label{tab:critica}
+\begin{tabular}{p{3.7cm}p{3.7cm}}
+\toprule
+\textbf{Fortalezas} & \textbf{Limitaciones} \\
+\midrule
+Reduce 2.5--3$\times$ el costo de proyección sin pérdida visible de calidad &
+No reduce de forma comparable el tiempo total, pues advección y EXNBFLIP no se aceleran \\
+\addlinespace
+Se integra fácilmente en marcos de celdas altas existentes &
+Solo se compara contra la variante de espesor uniforme, no contra otros métodos adaptativos (octree, quadtree) \\
+\addlinespace
+Extiende el acoplamiento bidireccional a cuerpos que intersecan celdas altas directamente &
+El amortiguamiento numérico de energía cinética persiste y no se resuelve \\
+\addlinespace
+Robusto ante variaciones de parámetros heurísticos ($\alpha$, $d_{\min}$, $d_{\max}$) &
+Los parámetros siguen siendo heurísticos y ajustados empíricamente \\
+\addlinespace
+Validado en cuatro escenas con geometría y dinámica variadas &
+No se reportan métricas cuantitativas de fidelidad visual (p. ej. error de superficie); cada escena se ejecuta en un procesador distinto, lo que dificulta comparar tiempos entre figuras \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Un primer punto débil, reconocido honestamente por los propios autores en su sección de discusión, es que la aceleración del paso de proyección no se traduce en una reducción proporcional del tiempo total de simulación: como el método no modifica el costo de la advección ni el de las operaciones propias de EXNBFLIP, la ganancia global (1.5$\times$--2$\times$) es notablemente menor que la ganancia local en proyección (2.5$\times$--3$\times$). Esto sugiere que el verdadero potencial del método solo se aprovecharía plenamente si se combinara con otras técnicas de aceleración --como grillas adaptativas horizontales o esquemas asíncronos--, algo que los autores dejan explícitamente como trabajo futuro en lugar de abordarlo en este artículo.
+
+Un segundo punto criticable es la elección de la línea base de comparación: el método se evalúa únicamente contra la grilla de celdas altas de espesor uniforme, pero no se compara de forma cuantitativa contra otras familias de estructuras adaptativas contemporáneas que el propio artículo menciona en su sección de trabajo relacionado, como los octrees con resolución de superficie adaptativa o las celdas altas con quadtree de un trabajo previo de los mismos autores \cite{narita2026}. Dado que estas alternativas también atacan el mismo cuello de botella, una comparación directa de tiempos y calidad visual habría fortalecido considerablemente la evaluación empírica.
+
+En tercer lugar, aunque las curvas de energía cinética se presentan como evidencia de preservación de calidad, se trata de una métrica agregada y relativamente indirecta: no se reportan métricas de error de superficie más finas (por ejemplo, distancia de Hausdorff entre superficies o comparaciones cuadro a cuadro), como sí ocurre en otros trabajos de la misma sesión de EUROGRAPHICS 2026 sobre simulación de fluidos. Asimismo, cada una de las cuatro escenas se ejecutó en un procesador distinto (Ryzen~9 5950X, 7950X y 9950X), lo cual introduce una variable de confusión al comparar los tiempos absolutos entre figuras, aun cuando las comparaciones \emph{dentro} de cada escena (método propuesto contra el de referencia, en el mismo hardware) siguen siendo válidas.
+
+Finalmente, los propios autores reconocen dos limitaciones adicionales de peso: (i) el amortiguamiento numérico de la energía cinética, un fenómeno común a los métodos espacialmente adaptativos, permanece sin resolver y se deja como línea futura; y (ii) el esquema de acoplamiento bidireccional, aunque mejora respecto del trabajo previo, sigue sin estar diseñado para cuerpos rígidos completamente sumergidos cuya interacción dominante ocurre muy por debajo de la superficie, lo que se traduce en una ligera pérdida de precisión en flotabilidad y velocidad de ascenso en esos casos. Estas limitaciones no invalidan la contribución, pero delimitan con claridad su alcance práctico.
+
+\subsection{Relación con otros trabajos de la sesión ``Go with the Flow''}
+Resulta ilustrativo situar este artículo dentro de la sesión de EUROGRAPHICS 2026 a la que pertenece, la cual reúne cuatro trabajos sobre simulación y renderizado de fluidos con enfoques marcadamente distintos: un modelo de películas delgadas (\emph{thin film}) reparametrizado para controlar el goteo en pintura digital en tiempo real \cite{herson2026}; un modelo de energía semi-analítico para el manejo de fronteras móviles complejas en simulación de fluidos basada en partículas (SPH) \cite{liu2026}; una técnica que combina un simulador físico ligero con modelos de difusión de video para componer efectos de espuma, burbujas y transparencia de forma fotorrealista \cite{chen2025}; y, finalmente, el artículo aquí revisado, centrado exclusivamente en la eficiencia computacional de un solucionador euleriano clásico. Mientras que los otros tres trabajos priorizan ampliar el rango de fenómenos visuales reproducibles (goteo, penetración en fronteras móviles, espumas y mezclas realistas), el artículo de Narita y Kanai no introduce ningún fenómeno físico nuevo: su contribución es puramente algorítmica y de rendimiento. Esto lo convierte en un complemento natural, más que en un competidor directo, de los otros trabajos de la sesión, ya que una capa óptica adaptativa podría en principio combinarse con esquemas de acoplamiento de fronteras como el de \cite{liu2026} o con simuladores base similares a los que alimentan el pipeline de \cite{chen2025}.
+
+\section{Conclusiones}
+El artículo \emph{Adaptive Optical Layers: Efficient Tall Cell Grids for Liquid Simulation} realiza una contribución incremental pero bien ejecutada al problema de acelerar la simulación euleriana de líquidos: en lugar de proponer una estructura de datos completamente nueva, refina una idea existente (las grillas de celdas altas) haciendo que uno de sus parámetros más rígidos --el espesor de la capa óptica-- responda de forma local a la dinámica del fluido. Sus principales méritos son la simplicidad de implementación, la facilidad de integración en marcos ya existentes y una reducción sustancial y bien documentada del costo del paso de proyección. Sus principales debilidades son la falta de comparación contra otras familias de métodos adaptativos, la ausencia de métricas cuantitativas de fidelidad visual más allá de la energía cinética, y el hecho de que la aceleración total de la simulación queda muy por debajo de la aceleración lograda específicamente en la proyección. En conjunto, se trata de un aporte sólido y honesto --los propios autores son transparentes respecto a sus limitaciones-- que probablemente resulte más valioso como componente combinable con otras técnicas de adaptatividad que como solución definitiva al problema del costo computacional en simulación de líquidos.
+
+\begin{thebibliography}{9}
+
+\bibitem{narita2026}
+F.~Narita y T.~Kanai.
+\newblock Adaptive Optical Layers: Efficient Tall Cell Grids for Liquid Simulation.
+\newblock \emph{Computer Graphics Forum} (Proc. EUROGRAPHICS 2026), 2026. DOI: 10.1111/cgf.70357.
+
+\bibitem{herson2026}
+Z.~Herson, A.~Paris, y É.~Michel.
+\newblock Dripping Thin Films for Real-time Digital Painting.
+\newblock \emph{Computer Graphics Forum} (Proc. EUROGRAPHICS 2026), 2026.
+
+\bibitem{liu2026}
+J.~Liu, S.~Liu, Y.~Guo, R.~Liang, Y.~Li, y X.~He.
+\newblock A Semi-Analytical Energy Model for Particle-Based Fluid Simulation Involving Complex Moving Boundaries.
+\newblock \emph{Computer Graphics Forum} (Proc. EUROGRAPHICS 2026), 2026.
+
+\bibitem{chen2025}
+D.~Chen, Z.~Lao, Y.~Guo, y H.~Yu.
+\newblock Fluid Composer: Fluid Detail Composition and Rendering Using Video Diffusion Models.
+\newblock \emph{Computer Graphics Forum}, 2025. DOI: 10.1111/cgf.70300.
+
+\bibitem{roessl2026}
+C.~Rössl.
+\newblock Publications.
+\newblock \emph{Christian Rössl's homepage, Otto von Guericke University Magdeburg}, 2026. \url{https://pages.vc.cs.ovgu.de/roessl/publications/}.
+
+\end{thebibliography}
+
+\end{document}
